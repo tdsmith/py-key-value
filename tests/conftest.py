@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import platform
+import socket
 import subprocess
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -94,3 +95,11 @@ def run_container_with_log_wait(container: Any, message: str, *, timeout: int | 
 
             wait_for_logs(container, message, timeout=timeout or 120)
         yield container
+
+
+def closed_local_endpoint() -> str:
+    """Return a loopback URL whose port was just released, so connections to it are refused."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    return f"http://127.0.0.1:{port}"

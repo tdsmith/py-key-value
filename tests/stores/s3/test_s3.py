@@ -10,7 +10,7 @@ from key_value.aio._utils.wait import async_wait_for_true
 from key_value.aio.errors import StoreSetupError
 from key_value.aio.stores.base import BaseStore
 from key_value.aio.stores.s3 import S3Store
-from tests.conftest import run_container_with_log_wait, should_skip_docker_tests
+from tests.conftest import closed_local_endpoint, run_container_with_log_wait, should_skip_docker_tests
 from tests.stores.base import BaseStoreTests, ContextManagerStoreTestMixin
 
 # S3 test configuration (using LocalStack)
@@ -24,9 +24,6 @@ LOCALSTACK_VERSIONS_TO_TEST = [
 ]
 
 LOCALSTACK_CONTAINER_PORT = 4566
-
-# Nothing listens on port 1, so connections are refused immediately.
-UNREACHABLE_ENDPOINT = "http://127.0.0.1:1"
 
 
 async def ping_s3(endpoint_url: str) -> bool:
@@ -56,7 +53,7 @@ async def test_s3_setup_retries_with_fresh_client(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("AWS_MAX_ATTEMPTS", "1")
     store = S3Store(
         bucket_name=S3_TEST_BUCKET,
-        endpoint_url=UNREACHABLE_ENDPOINT,
+        endpoint_url=closed_local_endpoint(),
         aws_access_key_id="test",
         aws_secret_access_key="test",
         region_name="us-east-1",

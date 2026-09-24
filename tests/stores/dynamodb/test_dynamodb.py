@@ -17,7 +17,7 @@ from key_value.aio._utils.wait import async_wait_for_true
 from key_value.aio.errors import StoreSetupError
 from key_value.aio.stores.base import BaseStore
 from key_value.aio.stores.dynamodb import DynamoDBStore
-from tests.conftest import run_container_with_log_wait, should_skip_docker_tests
+from tests.conftest import closed_local_endpoint, run_container_with_log_wait, should_skip_docker_tests
 from tests.stores.base import BaseStoreTests, ContextManagerStoreTestMixin
 
 # DynamoDB test configuration
@@ -31,9 +31,6 @@ DYNAMODB_VERSIONS_TO_TEST = [
 ]
 
 DYNAMODB_CONTAINER_PORT = 8000
-
-# Nothing listens on port 1, so connections are refused immediately.
-UNREACHABLE_ENDPOINT = "http://127.0.0.1:1"
 
 
 async def ping_dynamodb(endpoint_url: str) -> bool:
@@ -63,7 +60,7 @@ async def test_dynamodb_setup_retries_with_fresh_client(monkeypatch: pytest.Monk
     monkeypatch.setenv("AWS_MAX_ATTEMPTS", "1")
     store = DynamoDBStore(
         table_name=DYNAMODB_TEST_TABLE,
-        endpoint_url=UNREACHABLE_ENDPOINT,
+        endpoint_url=closed_local_endpoint(),
         aws_access_key_id="test",
         aws_secret_access_key="test",
         region_name="us-east-1",
