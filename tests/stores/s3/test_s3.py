@@ -26,15 +26,15 @@ LOCALSTACK_CONTAINER_PORT = 4566
 
 async def ping_s3(endpoint_url: str) -> bool:
     """Check if LocalStack S3 is running."""
-    from key_value.aio.stores.s3.store import _create_s3_client_context, _create_s3_session
+    from key_value.aio.stores.s3.store import _create_s3_client_context
 
     try:
-        session = _create_s3_session(
+        async with _create_s3_client_context(
+            endpoint_url=endpoint_url,
             aws_access_key_id="test",
             aws_secret_access_key="test",
             region_name="us-east-1",
-        )
-        async with _create_s3_client_context(session, endpoint_url=endpoint_url) as client:
+        ) as client:
             await client.list_buckets()
     except Exception:
         return False
@@ -79,7 +79,7 @@ class TestS3Store(ContextManagerStoreTestMixin, BaseStoreTests):
     @pytest.fixture
     async def store(self, setup_s3: None, s3_endpoint: str) -> S3Store:
         from key_value.aio.stores.s3 import S3CollectionSanitizationStrategy, S3KeySanitizationStrategy
-        from key_value.aio.stores.s3.store import _create_s3_client_context, _create_s3_session
+        from key_value.aio.stores.s3.store import _create_s3_client_context
 
         store = S3Store(
             bucket_name=S3_TEST_BUCKET,
@@ -93,29 +93,18 @@ class TestS3Store(ContextManagerStoreTestMixin, BaseStoreTests):
         )
 
         # Clean up test bucket if it exists
-        session = _create_s3_session(
+        async with _create_s3_client_context(
+            endpoint_url=s3_endpoint,
             aws_access_key_id="test",
             aws_secret_access_key="test",
             region_name="us-east-1",
-        )
-        async with _create_s3_client_context(session, endpoint_url=s3_endpoint) as client:
+        ) as client:
             with contextlib.suppress(Exception):
-                # Delete all objects in the bucket (handle pagination)
-                continuation_token: str | None = None
-                while True:
-                    list_kwargs = {"Bucket": S3_TEST_BUCKET}
-                    if continuation_token:
-                        list_kwargs["ContinuationToken"] = continuation_token
-                    response = await client.list_objects_v2(**list_kwargs)
-
-                    # Delete objects from this page
-                    for obj in response.get("Contents", []):
-                        await client.delete_object(Bucket=S3_TEST_BUCKET, Key=obj["Key"])
-
-                    # Check if there are more pages
-                    continuation_token = response.get("NextContinuationToken")
-                    if not continuation_token:
-                        break
+                # Delete all objects in the bucket
+                async for page in client.get_paginator("list_objects_v2").paginate(Bucket=S3_TEST_BUCKET):
+                    for obj in page.get("Contents", []):
+                        if key := obj.get("Key"):
+                            await client.delete_object(Bucket=S3_TEST_BUCKET, Key=key)
 
                 # Delete the bucket
                 await client.delete_bucket(Bucket=S3_TEST_BUCKET)
