@@ -156,7 +156,8 @@ class DynamoDBStore(BaseContextManagerStore, BaseStore):
     - key (sort key)
     """
 
-    _raw_client: DynamoDBClientContext | None
+    # Settings for the client the store creates itself; each setup attempt needs a fresh client context.
+    _client_settings: dict[str, str | None]
     _table_name: str
     _client: DynamoDBClient | None
     _table_config: dict[str, Any]
@@ -251,15 +252,15 @@ class DynamoDBStore(BaseContextManagerStore, BaseStore):
 
         if client is not None:
             self._client = client
-            self._raw_client = None
+            self._client_settings = {}
         else:
-            self._raw_client = _create_dynamodb_client_context(
-                region_name=region_name,
-                endpoint_url=endpoint_url,
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-                aws_session_token=aws_session_token,
-            )
+            self._client_settings = {
+                "region_name": region_name,
+                "endpoint_url": endpoint_url,
+                "aws_access_key_id": aws_access_key_id,
+                "aws_secret_access_key": aws_secret_access_key,
+                "aws_session_token": aws_session_token,
+            }
             self._client = None
 
         super().__init__(
@@ -278,11 +279,8 @@ class DynamoDBStore(BaseContextManagerStore, BaseStore):
     async def _setup(self) -> None:
         """Setup the DynamoDB client and ensure table exists."""
         # Register client cleanup if we own the client
-        if not self._client_provided_by_user and self._client is None:
-            if self._raw_client is None:
-                msg = "DynamoDB client not initialized"
-                raise ValueError(msg)
-            self._client = await self._exit_stack.enter_async_context(self._raw_client)
+        if not self._client_provided_by_user:
+            self._client = await self._exit_stack.enter_async_context(_create_dynamodb_client_context(**self._client_settings))
 
         try:
             table_exists = await _describe_dynamodb_table(self._connected_client, self._table_name)

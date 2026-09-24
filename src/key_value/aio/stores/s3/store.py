@@ -278,7 +278,8 @@ class S3Store(BaseContextManagerStore, BaseStore):
 
     _bucket_name: str
     _endpoint_url: str | None
-    _raw_client: S3ClientContext | None
+    # Settings for the client the store creates itself; each setup attempt needs a fresh client context.
+    _client_settings: dict[str, str | None]
     _client: S3Client | None
 
     @overload
@@ -366,15 +367,15 @@ class S3Store(BaseContextManagerStore, BaseStore):
 
         if client:
             self._client = client
-            self._raw_client = None
+            self._client_settings = {}
         else:
-            self._raw_client = _create_s3_client_context(
-                region_name=region_name,
-                endpoint_url=endpoint_url,
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-                aws_session_token=aws_session_token,
-            )
+            self._client_settings = {
+                "region_name": region_name,
+                "endpoint_url": endpoint_url,
+                "aws_access_key_id": aws_access_key_id,
+                "aws_secret_access_key": aws_secret_access_key,
+                "aws_session_token": aws_session_token,
+            }
             self._client = None
 
         super().__init__(
@@ -407,8 +408,8 @@ class S3Store(BaseContextManagerStore, BaseStore):
         HeadBucket operation to check for bucket existence and creates it if not found.
         """
         # Register client cleanup if we own the client
-        if not self._client_provided_by_user and self._raw_client is not None:
-            self._client = await self._exit_stack.enter_async_context(self._raw_client)
+        if not self._client_provided_by_user:
+            self._client = await self._exit_stack.enter_async_context(_create_s3_client_context(**self._client_settings))
 
         from botocore.exceptions import ClientError
 

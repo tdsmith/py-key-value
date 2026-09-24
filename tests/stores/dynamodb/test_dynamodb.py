@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pytest
+from botocore.exceptions import EndpointConnectionError
 from dirty_equals import IsDatetime
 from inline_snapshot import snapshot
 from testcontainers.core.container import DockerContainer
@@ -31,6 +32,9 @@ DYNAMODB_VERSIONS_TO_TEST = [
 
 DYNAMODB_CONTAINER_PORT = 8000
 
+# Nothing listens on port 1, so connections are refused immediately.
+UNREACHABLE_ENDPOINT = "http://127.0.0.1:1"
+
 
 async def ping_dynamodb(endpoint_url: str) -> bool:
     """Check if DynamoDB Local is running."""
@@ -52,6 +56,23 @@ async def ping_dynamodb(endpoint_url: str) -> bool:
 
 class DynamoDBFailedToStartError(Exception):
     pass
+
+
+async def test_dynamodb_setup_retries_with_fresh_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed setup must not leave the store holding a spent client context."""
+    monkeypatch.setenv("AWS_MAX_ATTEMPTS", "1")
+    store = DynamoDBStore(
+        table_name=DYNAMODB_TEST_TABLE,
+        endpoint_url=UNREACHABLE_ENDPOINT,
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+        region_name="us-east-1",
+    )
+
+    for _ in range(2):
+        with pytest.raises(StoreSetupError) as exc_info:
+            await store.setup()
+        assert isinstance(exc_info.value.__cause__, EndpointConnectionError)
 
 
 def get_value_from_response(response: GetItemOutputTypeDef) -> dict[str, Any]:
